@@ -1,45 +1,85 @@
-Overview
-========
+Este projeto implementa um pipeline de ELT (Extract, Load, Transform) utilizando o Apache Airflow (Astronomer), com armazenamento de dados em Google Cloud Storage (GCS), aplicando uma arquitetura em camadas: bronze, silver e gold.
 
-Welcome to Astronomer! This project was generated after you ran 'astro dev init' using the Astronomer CLI. This readme describes the contents of the project, as well as how to run Apache Airflow on your local machine.
+📂 Estrutura do Projeto
+makefile
+Copiar
+Editar
+├── dags/
+│   ├── bronze_ingest_dag.py          # Sensor + transformação bronze → silver
+│   ├── silver_transform_dag.py       # Sensor + transformação silver → gold
+│   └── gold_business_dag.py          # Regras de negócio finais (gold)
+├── include/
+│   └── gcp_key.json                  # Chave de autenticação (não subir no Git!)
+├── README.md
+└── requirements.txt
+🔗 Conexão com GCP
+A conexão com o Google Cloud é feita via uma chave de serviço (gcp_key.json).
 
-Project Contents
-================
+Gerar chave JSON em IAM > Service Accounts > Create Key.
 
-Your Astro project contains the following files and folders:
+Escapar a private_key com \\n e gerar o extra JSON no formato:
 
-- dags: This folder contains the Python files for your Airflow DAGs. By default, this directory includes one example DAG:
-    - `example_astronauts`: This DAG shows a simple ETL pipeline example that queries the list of astronauts currently in space from the Open Notify API and prints a statement for each astronaut. The DAG uses the TaskFlow API to define tasks in Python, and dynamic task mapping to dynamically print a statement for each astronaut. For more on how this DAG works, see our [Getting started tutorial](https://www.astronomer.io/docs/learn/get-started-with-airflow).
-- Dockerfile: This file contains a versioned Astro Runtime Docker image that provides a differentiated Airflow experience. If you want to execute other commands or overrides at runtime, specify them here.
-- include: This folder contains any additional files that you want to include as part of your project. It is empty by default.
-- packages.txt: Install OS-level packages needed for your project by adding them to this file. It is empty by default.
-- requirements.txt: Install Python packages needed for your project by adding them to this file. It is empty by default.
-- plugins: Add custom or community plugins for your project to this file. It is empty by default.
-- airflow_settings.yaml: Use this local-only file to specify Airflow Connections, Variables, and Pools instead of entering them in the Airflow UI as you develop DAGs in this project.
+json
+Copiar
+Editar
+{
+  "keyfile_dict": {
+    "type": "service_account",
+    "...": "...",
+    "private_key": "-----BEGIN PRIVATE KEY-----\\nABC...\\n-----END PRIVATE KEY-----\\n"
+  },
+  "scope": "https://www.googleapis.com/auth/cloud-platform"
+}
+Adicionar esse conteúdo no Airflow UI > Admin → Connections > google_cloud_default.
 
-Deploy Your Project Locally
-===========================
+🧱 Camadas de Dados
+Bronze: dados brutos recebidos (.csv)
 
-Start Airflow on your local machine by running 'astro dev start'.
+Silver: dados limpos e transformados (.parquet)
 
-This command will spin up five Docker containers on your machine, each for a different Airflow component:
+Gold: dados prontos para análise com regras de negócio aplicadas
 
-- Postgres: Airflow's Metadata Database
-- Scheduler: The Airflow component responsible for monitoring and triggering tasks
-- DAG Processor: The Airflow component responsible for parsing DAGs
-- API Server: The Airflow component responsible for serving the Airflow UI and API
-- Triggerer: The Airflow component responsible for triggering deferred tasks
+🌀 Fluxo ELT com DAGs
+🔍 1. Bronze → Silver
+Sensor: aguarda qualquer .csv na pasta bronze/
 
-When all five containers are ready the command will open the browser to the Airflow UI at http://localhost:8080/. You should also be able to access your Postgres Database at 'localhost:5432/postgres' with username 'postgres' and password 'postgres'.
+Tarefa:
 
-Note: If you already have either of the above ports allocated, you can either [stop your existing Docker containers or change the port](https://www.astronomer.io/docs/astro/cli/troubleshoot-locally#ports-are-not-available-for-my-local-airflow-webserver).
+Lê os arquivos .csv
 
-Deploy Your Project to Astronomer
-=================================
+Remove duplicatas e valores nulos
 
-If you have an Astronomer account, pushing code to a Deployment on Astronomer is simple. For deploying instructions, refer to Astronomer documentation: https://www.astronomer.io/docs/astro/deploy-code/
+Adiciona coluna processado = True
 
-Contact
-=======
+Salva como .parquet em silver/
 
-The Astronomer CLI is maintained with love by the Astronomer team. To report a bug or suggest a change, reach out to our support.
+Move original para bronze/processed/
+
+✨ 2. Silver → Gold
+Sensor: aguarda silver/produtos.parquet
+
+Tarefa:
+
+Lê o .parquet
+
+Aplica regra de negócio (ex: agregações)
+
+Exporta como .parquet para gold/
+
+📦 Operadores e Sensores usados
+GCSHook: leitura e escrita em buckets
+
+GCSObjectsWithPrefixExistenceSensor: aguarda arquivos em GCS
+
+@dag e @task: estrutura moderna com Airflow 2.x+
+
+Variable.get(): para parametrizar o nome do bucket
+
+✅ Benefícios do projeto
+Automatiza o ciclo de ingestão, transformação e entrega de dados.
+
+Evita retrabalho com sensores e controle de arquivos processados.
+
+Usa camadas bem definidas para organização e rastreabilidade.
+
+Pode ser expandido facilmente para múltiplas fontes e regras de negócio.
