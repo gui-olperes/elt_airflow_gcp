@@ -1,85 +1,108 @@
-Este projeto implementa um pipeline de ELT (Extract, Load, Transform) utilizando o Apache Airflow (Astronomer), com armazenamento de dados em Google Cloud Storage (GCS), aplicando uma arquitetura em camadas: bronze, silver e gold.
+# 🛠️ ELT com Airflow + Google Cloud Storage
 
-📂 Estrutura do Projeto
-makefile
-Copiar
-Editar
+Este projeto implementa um pipeline de **ELT (Extract, Load, Transform)** utilizando o **Apache Airflow** (via Astronomer) e armazenamento de dados em **Google Cloud Storage (GCS)**. O pipeline segue uma arquitetura em camadas: **bronze → silver → gold**.
+
+---
+
+## 📂 Estrutura do Projeto
+
+```
 ├── dags/
-│   ├── bronze_ingest_dag.py          # Sensor + transformação bronze → silver
-│   ├── silver_transform_dag.py       # Sensor + transformação silver → gold
-│   └── gold_business_dag.py          # Regras de negócio finais (gold)
+│   ├── transform_dag.py             # Bronze → Silver
+│   ├── vendas_por_categoria_dag.py # Silver → Gold
 ├── include/
-│   └── gcp_key.json                  # Chave de autenticação (não subir no Git!)
+│   └── gcp_key.json                 # Chave GCP (não subir ao Git!)
 ├── README.md
 └── requirements.txt
-🔗 Conexão com GCP
-A conexão com o Google Cloud é feita via uma chave de serviço (gcp_key.json).
+```
 
-Gerar chave JSON em IAM > Service Accounts > Create Key.
+---
 
-Escapar a private_key com \\n e gerar o extra JSON no formato:
+## 🔗 Conexão com GCP
 
-json
-Copiar
-Editar
-{
-  "keyfile_dict": {
-    "type": "service_account",
-    "...": "...",
-    "private_key": "-----BEGIN PRIVATE KEY-----\\nABC...\\n-----END PRIVATE KEY-----\\n"
-  },
-  "scope": "https://www.googleapis.com/auth/cloud-platform"
+A conexão com o Google Cloud é configurada por meio de uma chave de serviço (`gcp_key.json`).
+
+1. Gere a chave JSON no painel do GCP (IAM → Service Accounts).
+2. Rode este script localmente para preparar o campo `extra` para a conexão no Airflow:
+
+```python
+import json
+
+with open(r"C:\caminho\para\gcp_key.json") as f:
+    keyfile_dict = json.load(f)
+
+keyfile_dict["private_key"] = keyfile_dict["private_key"].replace("\n", "\\n")
+
+extra_json = {
+    "keyfile_dict": keyfile_dict,
+    "scope": "https://www.googleapis.com/auth/cloud-platform"
 }
-Adicionar esse conteúdo no Airflow UI > Admin → Connections > google_cloud_default.
 
-🧱 Camadas de Dados
-Bronze: dados brutos recebidos (.csv)
+print(json.dumps(extra_json, indent=2))
+```
 
-Silver: dados limpos e transformados (.parquet)
+3. Copie o JSON impresso e cole na UI do Airflow em:  
+   `Admin → Connections → google_cloud_default → Extra`
 
-Gold: dados prontos para análise com regras de negócio aplicadas
+---
 
-🌀 Fluxo ELT com DAGs
-🔍 1. Bronze → Silver
-Sensor: aguarda qualquer .csv na pasta bronze/
+## 🧱 Camadas de Dados
 
-Tarefa:
+- **Bronze**: arquivos `.csv` brutos enviados ao GCS
+- **Silver**: dados tratados (ex: remoção de duplicatas/nulos) em `.parquet`
+- **Gold**: aplicação de regras de negócio e geração de datasets finais
 
-Lê os arquivos .csv
+---
 
-Remove duplicatas e valores nulos
+## 🌀 Fluxo ELT com DAGs
 
-Adiciona coluna processado = True
+### 🔍 Bronze → Silver (`transform_dag.py`)
 
-Salva como .parquet em silver/
+- **Sensor**: espera por qualquer `.csv` na pasta `bronze/`
+- **Transformação**:
+  - Remove duplicatas
+  - Remove valores nulos
+  - Adiciona coluna `processado = True`
+- **Saída**:
+  - Exporta `.parquet` para `silver/`
+  - Move `.csv` original para `bronze/processed/`
 
-Move original para bronze/processed/
+### ✨ Silver → Gold (`vendas_por_categoria_dag.py`)
 
-✨ 2. Silver → Gold
-Sensor: aguarda silver/produtos.parquet
+- **Sensor**: espera pelo arquivo `silver/produtos.parquet`
+- **Transformação**:
+  - Aplica lógica de negócio (ex: vendas por categoria)
+  - Exporta resultado em `.parquet` para `gold/`
 
-Tarefa:
+---
 
-Lê o .parquet
+## 🔧 Operadores e Sensores Utilizados
 
-Aplica regra de negócio (ex: agregações)
+- `@dag`, `@task` — DAGs declarativas com Airflow moderno
+- `GCSHook` — leitura e escrita em buckets GCS
+- `GCSObjectsWithPrefixExistenceSensor` — sensor para aguardar arquivos
+- `Variable.get()` — para parametrização do bucket via UI do Airflow
 
-Exporta como .parquet para gold/
+---
 
-📦 Operadores e Sensores usados
-GCSHook: leitura e escrita em buckets
+## ✅ Vantagens
 
-GCSObjectsWithPrefixExistenceSensor: aguarda arquivos em GCS
+- Evita reprocessamento com controle de arquivos
+- Pipelines desacoplados e modulares por camada
+- Escalável para múltiplas fontes de dados
+- Permite lógica de negócio na camada Gold
+- Integração nativa com GCP
 
-@dag e @task: estrutura moderna com Airflow 2.x+
+---
 
-Variable.get(): para parametrizar o nome do bucket
+## 🚀 Próximos Passos
 
-✅ Benefícios do projeto
-Automatiza o ciclo de ingestão, transformação e entrega de dados.
+- Versionamento de arquivos com timestamp no nome
+- Upload dos dados finais para BigQuery
+- Logs enriquecidos com metadados dos arquivos
+- Monitoramento com alertas (Slack/Email)
+- Deploy automatizado com CI/CD
 
-Evita retrabalho com sensores e controle de arquivos processados.
+---
 
-Usa camadas bem definidas para organização e rastreabilidade.
-
-Pode ser expandido facilmente para múltiplas fontes e regras de negócio.
+> 💡 **Observação**: Não versionar nem subir `gcp_key.json` em repositórios públicos.
